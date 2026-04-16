@@ -1,0 +1,7 @@
+EWS-Dataset/
+*.zip
+__pycache__/
+processed/
+examples/sanity_checks/
+metadata/*.csv
+metadata/dataset_summary.txt
