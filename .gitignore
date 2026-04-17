@@ -5,3 +5,4 @@ processed/
 examples/sanity_checks/
 metadata/*.csv
 metadata/dataset_summary.txt
+results/
