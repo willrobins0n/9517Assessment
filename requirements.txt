@@ -3,3 +3,5 @@ pillow
 matplotlib
 pandas
 opencv-python
+scikit-learn
+scikit-image
