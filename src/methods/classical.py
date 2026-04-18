@@ -1,14 +1,3 @@
-"""Classical (unsupervised) segmentation methods.
-
-Currently contains `LabKMeans` — a per-image K-means baseline in CIE
-Lab colour space that picks the "greenest" cluster as the plant mask
-and cleans up with light morphology.
-
-This is an unsupervised baseline: it does NOT use the training set.
-Good contrast to the ML and DL methods — if it does surprisingly well
-it tells you the task is dominated by colour cues, and if the ML/DL
-methods don't beat it by a clear margin they're not adding much.
-"""
 from __future__ import annotations
 
 import cv2
@@ -18,22 +7,15 @@ from sklearn.cluster import KMeans
 
 from src.methods.base import Segmenter
 
+# Our first method will be lab colour space k means plant segmenters.
+# For each image, we will
+# 1) Convert RGB to CIE
+# 2) Run k means on the a b colour channels (L is dropped by default)
+# 3) Pick cluster with smallest mean as plant
+# 4) Clean up
+
 
 class LabKMeans(Segmenter):
-    """Unsupervised Lab-colour-space K-means plant segmenter.
-
-    Pipeline per image:
-      1. Convert RGB -> CIE Lab (OpenCV).
-      2. Run K-means on the a*b* colour channels (L* is dropped by
-         default — lightness varies with illumination and tends to hurt
-         colour clustering).
-      3. Pick the cluster with the smallest mean a* as "plant"
-         (most negative a* = most green in Lab).
-      4. Clean up: binary opening with a small disk + remove connected
-         components below `min_blob_size`.
-
-    Hyperparameters can be tuned on the validation split.
-    """
 
     name = 'classical_lab_kmeans'
 
@@ -45,83 +27,98 @@ class LabKMeans(Segmenter):
         use_lightness: bool = False,
         random_state: int = 42,
     ) -> None:
-        # Number of clusters. 2 = plant/soil. Bump to 3 if the plant
-        # cluster leaks into highlights or shadows — then "greenest
-        # centroid" will still pick the right one.
+    
+
+        # We're going to have 2 clusters (plant / soil). If the plant
+        # clusters leak into highlights or shadows be can bump up to 3.
         self.n_clusters = n_clusters
 
-        # Radius of the structuring disk for morphological opening.
-        # Larger removes more speckle at the cost of eating thin leaf
-        # edges; 1-3 is the typical range for 350x350 EWS images.
+        #Radius of structuring disk -> we're choosing two to remove more speckle.
+        # Also means we'll eat more thin leaf edges.
         self.opening_radius = opening_radius
 
-        # Drop connected components smaller than this many pixels.
-        # Set to 0 to disable. Tune on val: too high and you lose real
-        # seedlings; too low and you keep noise blobs.
+
+        # We want to drop connected components that are smaller
+        # than this many pixels. 
         self.min_blob_size = min_blob_size
 
         # Include L* in the feature vector. Usually off: L* varies
         # heavily with shadows/brightness and hurts colour clustering.
+
+        # We include L in the feature vctor -> we can turn it off to stop it interfering
+        # with shadows / brightness / colour clustering.
         self.use_lightness = use_lightness
 
-        # Seed so K-means results are reproducible across runs.
+        # Set reproducible seed so that we can get reproducable results.
         self.random_state = random_state
 
     def predict(self, image: np.ndarray) -> np.ndarray:
-        # --- Input normalisation --------------------------------------
-        # Harness should pass float32 RGB in [0, 1], but be defensive.
+
+        # First we normalise the image. We want it to pass float32 RGB
+        # between 0 and 1.
         if image.dtype != np.float32:
             image = image.astype(np.float32)
-        if image.max() > 1.5:
-            # Looks like uint8 slipped through — rescale.
-            image = image / 255.0
 
-        h, w, _ = image.shape
+        h = image.shape[0]
+        w = image.shape[1]
 
-        # --- 1. RGB -> Lab --------------------------------------------
-        # OpenCV's COLOR_RGB2LAB expects uint8 RGB input. The output
-        # Lab channels are all in [0, 255] (OpenCV's scaled convention).
-        rgb_u8 = (image * 255.0).clip(0, 255).astype(np.uint8)
-        lab = cv2.cvtColor(rgb_u8, cv2.COLOR_RGB2LAB)  # (H, W, 3) uint8
+        # Open VR expects uint8 RGB input -> output lab channels are all
+        # between 0 and 255. 
+        rgb_u8 = (image * 255.0)
+        rgb_u8 = np.clip(rgb_u8, 0, 255)
+        rgb_u8 = rgb_u8.astype(np.uint8)
 
-        # --- 2. Feature matrix for K-means ----------------------------
-        # Colour-only (a*, b*) by default. Drop L* because illumination
-        # changes shift L* without changing plant/soil identity.
+        lab = cv2.cvtColor(rgb_u8, cv2.COLOR_RGB2LAB)
+
+        # Now we create the feature matrix for K means. It'll be colour
+        # only by default -> can add lumination if wanted.
         if self.use_lightness:
-            features = lab.reshape(-1, 3).astype(np.float32)
+            features = lab.reshape(-1, 3)
+            features = features.astype(np.float32)
         else:
-            features = lab[..., 1:].reshape(-1, 2).astype(np.float32)
-
-        # --- 3. Cluster ------------------------------------------------
-        # n_init=10 runs K-means from 10 random starts and keeps the
-        # best — standard, cheap insurance against a bad initialisation.
+            ab = lab[..., 1:]
+            features = ab.reshape(-1, 2)
+            features = features.astype(np.float32)
+        # Now we just run our K means clustering. We choose 10 random starts
+        # and keep hte best.
         km = KMeans(
             n_clusters=self.n_clusters,
             n_init=10,
             random_state=self.random_state,
         )
-        cluster_labels = km.fit_predict(features).reshape(h, w)
 
-        # --- 4. Pick the plant cluster --------------------------------
-        # In Lab, the a* axis is green(-) <-> red(+). The most-negative
-        # mean a* centroid is the greenest cluster, i.e. plants.
-        # Index into cluster_centers_: a* is column 1 if we kept L*,
-        # else column 0 (features are [a, b]).
-        a_col = 1 if self.use_lightness else 0
-        plant_cluster = int(np.argmin(km.cluster_centers_[:, a_col]))
+        cluster_labels = km.fit_predict(features)
+        cluster_labels = cluster_labels.reshape(h, w)
+
+
+
+        # Now we choose plant cluster -> the most negative mean a centroid
+        # will be the plants.
+        if self.use_lightness:
+            a_col = 1
+        else:
+            a_col = 0
+
+        centers = km.cluster_centers_
+        plant_cluster = int(np.argmin(centers[:, a_col]))
+
         plant_mask = (cluster_labels == plant_cluster)
 
-        # --- 5. Morphological cleanup ---------------------------------
+        #  Now we clean up results
         if self.opening_radius > 0:
-            # Binary opening = erode then dilate. Removes small
-            # isolated foreground speckles without shrinking larger
+
+            # We remove small isolated speckles without shrinking the larger
             # connected plant regions.
-            plant_mask = binary_opening(plant_mask, disk(self.opening_radius))
+            selem = disk(self.opening_radius)
+            plant_mask = binary_opening(plant_mask, selem)
 
         if self.min_blob_size > 0:
-            # Drop connected components smaller than min_blob_size.
-            # remove_small_objects expects a bool array and labels CCs
-            # internally.
-            plant_mask = remove_small_objects(plant_mask, min_size=self.min_blob_size)
+
+            # now we drop the connected components that are smaller than
+            # minimum blob size. 
+            plant_mask = remove_small_objects(
+                plant_mask,
+                min_size=self.min_blob_size
+            )
 
         return plant_mask.astype(np.uint8)

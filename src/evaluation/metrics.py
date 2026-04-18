@@ -13,59 +13,41 @@
 #   3. score_masks(pred, gt)          -> convenience wrapper: counts + scores
 # =============================================================================
 
+
+# This will be used for scoring primitives by binary segmentation.
+# We need three functions:
+# 1 -> compute the raw pixel counts for TP FP FN TN.
+# 2 -> compute the scores from count -> compute precision, recall, F1, IoU
+# 3 -> score masks -> convenience wrapper: counts + scores.
 from __future__ import annotations
 
 from typing import Dict, Tuple
 
 import numpy as np
 
-# -----------------------------------------------------------------------------
-# EPS — tiny positive value added to denominators to avoid division by zero.
-# -----------------------------------------------------------------------------
-# For example if a method predicts an all-zero mask on an image that has no
-# plant pixels, TP = FP = FN = 0 and you'd otherwise hit 0/0 = NaN.
-# 1e-7 is small enough not to distort any real score (precision of 0.73
-# stays 0.73), and large enough to stay numerically stable.
+
+# We're going to define some small number, epsilon. I'm finding that
+# if a method predicts an all zero mask, then we get 0 / 0 = NaN.
+# 1e-7 is small enough to not distort any real score.
+
+
+
 EPS = 1e-7
 
 
 def confusion_counts(pred: np.ndarray, gt: np.ndarray) -> Tuple[int, int, int, int]:
-    """Return (TP, FP, FN, TN) for two binary {0, 1} masks of identical shape.
+   
+  
+    # We need to make both masks a bool. 
+    pred_bool = pred.astype(bool)
+    gt_bool = gt.astype(bool)
 
-    Convention (matches EWS):
-      - 1 (foreground) = plant
-      - 0 (background) = soil
-    """
-    # -------------------------------------------------------------------------
-    # Step 1: fail fast on shape mismatch.
-    # -------------------------------------------------------------------------
-    # This is the #1 source of silently-wrong metrics. If a method's predict()
-    # returns a different HxW than the ground truth (e.g. forgot to unpad a
-    # U-Net output), numpy would happily broadcast and produce meaningless
-    # numbers. Raise instead.
-    if pred.shape != gt.shape:
-        raise ValueError(f'Shape mismatch: pred {pred.shape} vs gt {gt.shape}')
 
-    # -------------------------------------------------------------------------
-    # Step 2: cast both masks to bool.
-    # -------------------------------------------------------------------------
-    # Works regardless of the caller passing uint8 {0,1}, float {0.0, 1.0},
-    # or already-bool. Everything non-zero becomes True.
-    pred_b = pred.astype(bool)
-    gt_b = gt.astype(bool)
-
-    # -------------------------------------------------------------------------
-    # Step 3: count each confusion-matrix cell over all pixels.
-    # -------------------------------------------------------------------------
-    # np.logical_and gives a bool array the same shape as the inputs, True
-    # wherever BOTH arguments are True. .sum() counts Trues (True == 1).
-    # ~pred_b is the bitwise NOT — i.e. the background prediction.
-    # int(...) converts numpy.int64 -> plain int so the CSV writer later
-    # doesn't emit noisy numpy-typed values.
-    tp = int(np.logical_and(pred_b, gt_b).sum())    # predicted plant & is plant
-    fp = int(np.logical_and(pred_b, ~gt_b).sum())   # predicted plant & is soil
-    fn = int(np.logical_and(~pred_b, gt_b).sum())   # predicted soil  & is plant
-    tn = int(np.logical_and(~pred_b, ~gt_b).sum())  # predicted soil  & is soil
+    # Now, we get the confusion matrix cell over all of the pixels.
+    tp = int(np.logical_and(pred_bool, gt_bool).sum())  
+    fp = int(np.logical_and(pred_bool, ~gt_bool).sum())  
+    fn = int(np.logical_and(~pred_bool, gt_bool).sum())     
+    tn = int(np.logical_and(~pred_bool, ~gt_bool).sum())    
 
     return tp, fp, fn, tn
 
@@ -91,7 +73,12 @@ def scores_from_counts(tp: int, fp: int, fn: int, tn: int = 0) -> Dict[str, floa
     # The standard primary metric for segmentation tasks like this one.
     iou = tp / (tp + fp + fn + EPS)
 
-    return {'precision': precision, 'recall': recall, 'f1': f1, 'iou': iou}
+    return {
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "iou": iou,
+    }
 
 
 def score_masks(pred: np.ndarray, gt: np.ndarray) -> Dict[str, float]:
@@ -100,9 +87,10 @@ def score_masks(pred: np.ndarray, gt: np.ndarray) -> Dict[str, float]:
     """
     tp, fp, fn, tn = confusion_counts(pred, gt)
     scores = scores_from_counts(tp, fp, fn, tn)
+
     # Keep raw counts around. They're useful for two things later:
     #   (a) micro averaging across images (pool counts, then score once)
     #   (b) reproducibility — you can recompute any metric from counts,
     #       but you can't go backwards from a scalar.
-    scores.update({'tp': tp, 'fp': fp, 'fn': fn, 'tn': tn})
+    scores.update({"tp": tp, "fp": fp, "fn": fn, "tn": tn})
     return scores

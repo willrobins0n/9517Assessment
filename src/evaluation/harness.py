@@ -1,16 +1,9 @@
-"""Evaluation harness.
 
-One entry point — `evaluate(segmenter, split_csv, results_dir, ...)` —
-that every method is run through. Produces:
 
-  * a per-image CSV with P/R/F1/IoU and inference time per sample
-  * one appended row in `summary.csv` (macro + micro aggregates)
-  * optionally, a folder of predicted-mask PNGs for qualitative figures
+# All 3 of my methods will hit the same data loading code, the same scoring code
+# and the same aggregation. As such, the numbers are directly comparable.
 
-Because every method hits the same data-loading code, the same scoring
-code, and the same aggregation, the numbers are directly comparable
-across classical / ML / DL methods.
-"""
+# Well have one entry point that compares all three methods.
 from __future__ import annotations
 
 import csv
@@ -21,14 +14,6 @@ from typing import Optional
 
 import numpy as np
 from PIL import Image
-
-# Make `src.*` imports resolvable when this module is imported from a
-# notebook, script, or Colab cell. Walk up two parents to reach the
-# repo root: src/evaluation/harness.py -> src/evaluation/ -> src/ -> repo/.
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
 from src.data_utils import load_image, load_mask
 from src.evaluation.metrics import score_masks, scores_from_counts
 from src.methods.base import Segmenter
@@ -42,44 +27,20 @@ def evaluate(
     save_predictions: bool = False,
     verbose: bool = True,
 ) -> dict:
-    """Run a segmenter over every sample in a split CSV and record metrics.
-
-    Parameters
-    ----------
-    segmenter
-        Any subclass of `Segmenter`. Must have a unique `name`.
-    split_csv
-        Path to a CSV produced by scripts/build_index.py. Expected
-        columns include `image_path`, `mask_path`, `image_name`.
-    results_dir
-        Root directory for CSVs and predictions. Created if missing.
-    train_time_s
-        Optional training-time-in-seconds to record alongside this
-        evaluation. Measured outside the harness (in each method's
-        own training script).
-    save_predictions
-        If True, write each predicted mask as a PNG to
-        `results_dir/<name>/predictions/`.
-    verbose
-        If True, print a one-line progress update per image.
-
-    Returns
-    -------
-    dict
-        The summary row written to `results_dir/summary.csv`.
-    """
     split_csv = Path(split_csv)
     results_dir = Path(results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    # Small CSV (<=190 rows for the full EWS dataset) so loading all of
-    # it up-front is fine and simplifies downstream indexing.
+    # We're going to load the entire CSV up front, as the dataset is
+    # quite small so should be ok.
     with split_csv.open('r', encoding='utf-8') as f:
         rows = list(csv.DictReader(f))
     if not rows:
         raise ValueError(f'Empty split CSV: {split_csv}')
 
-    # Per-method predictions folder, only created if we're writing PNGs.
+
+    # We'll have a predictions folder per method. However, we only want it to
+    # be created if we're wriitng PNGs.
     pred_dir = results_dir / segmenter.name / 'predictions'
     if save_predictions:
         pred_dir.mkdir(parents=True, exist_ok=True)
@@ -87,24 +48,25 @@ def evaluate(
     # Per-image rows become the method-specific CSV at the end.
     per_image: list[dict] = []
 
-    # Pool counts across all images for the micro-averaged scores.
-    total_tp = total_fp = total_fn = total_tn = 0
 
-    # Sum of per-image inference times. Reported in the summary row.
+
+    # We result the pool across all images, as well as the sum of the per image
+    # inference times.
+    total_tp = total_fp = total_fn = total_tn = 0
     total_infer = 0.0
 
     for row in rows:
         # Load inputs via the shared helpers so every method sees the
         # same RGB range, the same polarity convention, the same
         # everything. This is what keeps results comparable.
-        # image: float32, (H, W, 3), values in [0, 1]
-        # gt:    uint8,   (H, W),    values in {0, 1}
         image = load_image(Path(row['image_path']), color_space='rgb', normalize=True)
         gt = load_mask(Path(row['mask_path']), as_binary=True)
 
         # Time the predict() call only — not I/O. perf_counter is the
         # highest-resolution clock Python exposes; accurate for short
         # per-image durations.
+
+        # We want to only time the predict() call, not the I/O.
         t0 = time.perf_counter()
         pred = segmenter.predict(image)
         infer = time.perf_counter() - t0
@@ -113,6 +75,10 @@ def evaluate(
         # Normalise prediction shape and dtype. Some methods return
         # (1, H, W) or (H, W, 1); squeeze() collapses those singletons
         # so score_masks() sees a clean (H, W) uint8 mask.
+
+        # Now we need to normalise prediction shape and dtype. Some methods
+        # return (1, H, W), some return (H, W, 1). We can collapse them using
+        # the squeeze() function. 
         pred = np.asarray(pred).squeeze().astype(np.uint8)
         scores = score_masks(pred, gt)
 
@@ -147,24 +113,23 @@ def evaluate(
                 f"({infer * 1000:.1f} ms)"
             )
 
-    # -- Per-image CSV (one row per test image) -------------------------------
+    # We can have the CSV per image (one row for every test image)
     per_image_csv = results_dir / f'{segmenter.name}_per_image.csv'
     with per_image_csv.open('w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=list(per_image[0].keys()))
         writer.writeheader()
         writer.writerows(per_image)
 
-    # -- Aggregates -----------------------------------------------------------
-    # Macro = mean of per-image metrics. Treats every image equally
-    # regardless of foreground size. Use for the main results table.
+    # The macro is the mean of the per-image metrics. We treat every image
+    # equally, reagardless of the size of the foreground. This is what we'll
+    # use for the main results table.
     macro = {
         k: float(np.mean([r[k] for r in per_image]))
         for k in ('precision', 'recall', 'f1', 'iou')
     }
-    # Micro = pool counts across all images, compute metrics once.
-    # Dominated by images with more plant pixels. Useful sanity check:
-    # if macro and micro differ a lot, performance varies sharply with
-    # foreground size — worth a sentence in the discussion section.
+
+    # The micro is the pool counts across all of the images (where metrics are
+    # computed once). It'll be dominated by the images that have more plant pixels.
     micro = scores_from_counts(total_tp, total_fp, total_fn, total_tn)
 
     summary = {
