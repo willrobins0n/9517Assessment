@@ -167,7 +167,7 @@ def load_mask(mask_path: Path, as_binary: bool = True) -> np.ndarray:
     mask = Image.open(mask_path).convert('L')
     array = np.asarray(mask, dtype=np.uint8)
     if as_binary:
-        array = (array < 128).astype(np.uint8)
+        array = (array >= 128).astype(np.uint8)
     return array
 
 

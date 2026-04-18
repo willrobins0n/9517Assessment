@@ -5,3 +5,7 @@ pandas
 opencv-python
 scikit-learn
 scikit-image
+torch
+torchvision
+segmentation-models-pytorch
+albumentations

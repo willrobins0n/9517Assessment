@@ -36,9 +36,14 @@ EPS = 1e-7
 
 
 def confusion_counts(pred: np.ndarray, gt: np.ndarray) -> Tuple[int, int, int, int]:
-   
-  
-    # We need to make both masks a bool. 
+
+    # Fail fast if the prediction's shape doesn't match the ground truth.
+    # Without this, numpy would silently broadcast and produce meaningless
+    # metrics.
+    if pred.shape != gt.shape:
+        raise ValueError(f'Shape mismatch: pred {pred.shape} vs gt {gt.shape}')
+
+    # We need to make both masks a bool.
     pred_bool = pred.astype(bool)
     gt_bool = gt.astype(bool)
 

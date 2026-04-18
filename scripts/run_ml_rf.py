@@ -1,13 +1,3 @@
-#!/usr/bin/env python3
-"""Train the Random Forest segmenter and evaluate it on a split.
-
-Usage:
-    python scripts/run_ml_rf.py                    # train, evaluate on test
-    python scripts/run_ml_rf.py --split val        # train, evaluate on val
-
-Writes per-image metrics to results/ml_random_forest_per_image.csv and
-appends one row (including training time) to results/summary.csv.
-"""
 from __future__ import annotations
 
 import argparse
