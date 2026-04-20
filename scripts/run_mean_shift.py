@@ -35,7 +35,7 @@ def main() -> None:
     )
     # Expose the most useful hyperparameters so you can sweep from the
     # shell without editing the script each time.
-    parser.add_argument('--bandwidth', type=float, default=3)
+    parser.add_argument('--bandwidth', type=float, default=6)
     parser.add_argument('--opening-radius', type=int, default=2)
     parser.add_argument('--min-blob-size', type=int, default=50)
     parser.add_argument('--use-lightness', action='store_true')
