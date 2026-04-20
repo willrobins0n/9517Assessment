@@ -1,37 +1,32 @@
-## 1. What has been completed so far
+## 1. Work completed so far
 
-### Environment and dataset setup
-- Confirmed the EWS dataset directory is valid and readable.
-- Verified the dataset splits and counts:
+### Dataset setup and checking
+- I checked that the EWS dataset can be loaded correctly from the local project path.
+- I verified the split sizes:
   - train: 142 images
   - val: 24 images
   - test: 24 images
   - total: 190 images
-- Confirmed image and mask shapes are correct.
-- Confirmed masks are binary-compatible.
-- Updated `src/config.py` so project paths point to the local dataset and results directories correctly.
+- I checked that the image and mask sizes match correctly.
+- I also checked that the masks are compatible with binary segmentation.
+- I updated `src/config.py` so the local dataset path and output directories work correctly on my side.
 
-### Metadata generation and sanity checking
-- Built split index files under `metadata/`:
+### Metadata and sanity check
+- I generated the split metadata files under `metadata/`:
   - `train.csv`
   - `val.csv`
   - `test.csv`
   - `all_splits.csv`
-- Ran sanity-check visualisations and confirmed:
-  - original image
-  - ground-truth mask
-  - overlay
-  are correctly aligned.
+- I ran sanity-check visualisations to confirm that the original image, ground-truth mask, and overlay line up correctly.
 
-### Baseline methods run successfully
-Three segmentation methods have been run successfully on the test set:
-
+### Running the three main methods
+I ran all three segmentation methods on the test set successfully:
 1. **Classical Lab + KMeans**
 2. **Random Forest with handcrafted features**
 3. **U-Net with ResNet18 encoder**
 
-### Current test-set results
-Using the generated `results/summary.csv`, the current main results are:
+### Clean test-set summary results
+From the current `results/summary.csv`, the clean-condition results are:
 
 | Method | Macro Precision | Macro Recall | Macro F1 | Macro IoU |
 |---|---:|---:|---:|---:|
@@ -39,128 +34,136 @@ Using the generated `results/summary.csv`, the current main results are:
 | ml_random_forest | 0.9572 | 0.7998 | 0.8621 | 0.7675 |
 | dl_unet_r18 | 0.9305 | 0.9410 | 0.9351 | 0.8816 |
 
-Micro metrics were also checked and summarised using `tools/read_summary.py`.
+I also checked the micro metrics using `tools/read_summary.py`.
 
-### Visualisation / analysis tools added
-The following tools were added under `tools/` and tested successfully:
+### Tools and analysis scripts I added
+I added and tested several support scripts under `tools/`:
 
 - `read_summary.py`
-  - Reads `results/summary.csv`
-  - Prints macro and micro metrics in a clean format
+  - reads `results/summary.csv`
+  - prints macro and micro metrics clearly
 
 - `plot_metric_comparison.py`
-  - Plots summary metric comparison figures
-  - Currently used for:
-    - macro IoU comparison
-    - macro F1 comparison
-    - train time comparison
+  - plots metric comparison figures
+  - currently used for macro IoU, macro F1, and training time comparison
 
 - `visualize_dataset_splits.py`
-  - Creates overview images for train / val / test
-  - Each figure shows:
-    - original image
-    - ground-truth mask
-    - overlay
+  - creates overview figures for train / val / test
+  - each figure shows the original image, mask, and overlay
 
 - `visualize_method_comparison.py`
-  - Creates side-by-side comparisons for the same test image:
-    - original
-    - ground truth
-    - classical prediction
-    - random forest prediction
-    - U-Net prediction
+  - creates side-by-side prediction comparisons for the same test image
 
 - `visualize_best_worst_cases.py`
-  - Uses U-Net per-image IoU to select best 3 and worst 3 test cases
-  - Produces multi-method comparison figures for each selected case
+  - selects representative good and bad U-Net examples and compares all methods on them
 
-### Model saving added
-Training scripts were updated so trained models are now saved for later reuse:
-
-- Random Forest model saved to:
+### Model saving
+I updated the training scripts so trained models can be reused later:
+- Random Forest model:
   - `results/ml_random_forest/rf_segmenter.pkl`
-
-- U-Net checkpoint saved to:
+- U-Net checkpoint:
   - `results/dl_unet_r18/unet_segmenter.pth`
 
-This is important because robustness testing should ideally use already-trained models rather than retraining from scratch every time.
+This is useful because robustness experiments can reuse saved models instead of retraining from scratch.
+
+### Robustness workflow
+I also completed the first working version of the robustness visualisation workflow.
+
+The script `visualize_robustness_cases.py` now:
+- loads the saved Random Forest and U-Net models
+- uses the classical method together with RF and U-Net
+- automatically selects three representative test cases based on U-Net per-image IoU:
+  - **best**
+  - **median**
+  - **worst**
+- applies four perturbations:
+  - low brightness
+  - low contrast
+  - high contrast
+  - Gaussian noise
+- produces side-by-side figures showing:
+  - original image
+  - corrupted image
+  - ground truth
+  - classical prediction
+  - random forest prediction
+  - U-Net prediction
+- writes IoU and F1 directly on each prediction panel
+
+### Main observations from the current robustness figures
+From the current results, the overall trend is already quite clear:
+- **U-Net is the most robust method overall** across the tested perturbations.
+- **Random Forest is the second strongest method**, but it is more sensitive than U-Net when image quality drops.
+- **Classical Lab + KMeans is the weakest method**, especially under brightness/contrast changes and Gaussian noise.
+- In the **best case**, U-Net remains very stable under all four perturbations.
+- In the **median case**, U-Net is still strong, while RF drops more noticeably.
+- In the **worst case**, all methods degrade, but U-Net still usually performs best.
+
+These results are already enough to support the robustness part of the report's Results and Discussion sections.
 
 ---
 
-## 2. What has **not** been completed yet
+## 2. Work not finished yet
 
-### Robustness testing is not finished yet
-The next major unfinished task is **robustness analysis**.
+### Robustness section is not final yet
+The robustness visualisation is working, but I have not fully turned it into the final report subsection yet.
 
-Planned robustness directions include testing method behaviour under perturbed inputs such as:
-- low brightness
-- low contrast
-- blur
-- noise
-- possibly partial occlusion
+Still missing:
+- one compact robustness summary table
+- final selection of which robustness figures should go into the report
+- optional extra perturbation(s), such as blur or occlusion
+- short written interpretation connecting robustness trends to the method design
 
-This part has **not yet been completed** in a proper reusable way.
-
-### Report writing is not finished yet
-The code and visualisation groundwork is now strong, but the actual writing is still pending, especially:
+### Report writing is still incomplete
+The main code and figures are in place, but the writing itself is still not finished, especially:
 - Results section draft
 - Discussion section draft
-- Final tables and figure selection
+- final figure/table selection
+- concise explanation of why U-Net performs better than RF, and why RF performs better than the classical baseline
 
-### Video preparation is not finished yet
-There are now enough outputs and figures to support a strong video section, but the actual script/slides/recording are still pending.
+### Video material is also not final yet
+I have the main figures ready, but the slides, speaking script, and recording plan are still not fully organised.
 
 ---
 
-## 3. Next steps
+## 3. Suggested next steps
 
-### Priority 1: finish robustness testing
-Now that saved models exist, the best next step is:
-
-1. load the saved RF and U-Net models
-2. apply perturbations to selected test images
-3. run inference on the perturbed inputs
-4. compare:
-   - original input vs perturbed input
-   - original prediction vs perturbed prediction
-   - cross-method robustness differences
-
-First perturbation:
-- low brightness
-
-Then expand to:
-- low contrast
-- blur
-- Gaussian noise
+### Priority 1: finalise the robustness subsection
+- pick the strongest 2-4 robustness figures
+- make one compact summary table
+- write a short paragraph summarising the main trend
+- decide whether to include best + median, median + worst, or one strong case + one failure case in the main report
 
 ### Priority 2: prepare report-ready figures and tables
-Use the existing outputs to assemble:
-- one final results table
-- one metric comparison figure set
+Use the current outputs to prepare:
+- one final quantitative results table
+- one metric comparison figure
 - one dataset overview figure
 - one method comparison figure
 - one best/worst-case figure set
+- one compact robustness figure set
 
-### Priority 3: write the Results and Discussion sections
-A sensible order:
-1. dataset + split setup
-2. method summary
-3. quantitative results
-4. visual comparison of predictions
+### Priority 3: write Results and Discussion
+A practical order would be:
+1. dataset and split setup
+2. short summary of the three methods
+3. clean test quantitative results
+4. qualitative comparison figures
 5. best/worst cases
 6. robustness analysis
 7. discussion of why U-Net > RF > classical
 
 ### Priority 4: prepare video material
-Likely material already available for slides:
+The following material is already usable for slides:
 - dataset split overview figures
-- metric comparison bar charts
+- metric comparison charts
 - method comparison images
-- best/worst cases
+- best/worst case figures
+- robustness figures
 
 ---
 
-## 4. Console commands used so far
+## 4. Commands used so far
 
 ### Dataset verification
 ```bash
@@ -192,7 +195,7 @@ python3 scripts/run_ml_rf.py
 python3 scripts/run_deep_unet.py
 ```
 
-### Print summary metrics cleanly
+### Print summary metrics
 ```bash
 python3 tools/read_summary.py
 ```
@@ -217,9 +220,15 @@ python3 tools/plot_metric_comparison.py
 python3 tools/visualize_best_worst_cases.py
 ```
 
+### Create robustness comparison figures
+```bash
+python3 tools/visualize_robustness_cases.py
+```
+
 ---
 
-## 5. Short contribution summary
+## 5. Short personal contribution summary
 
-I have now completed the main experiment-running and visualisation support work for the project. This includes dataset verification, metadata CSV generation, sanity-check visualisation, running all three segmentation methods, summarising the results, adding several analysis/visualisation tools, and updating the RF/U-Net scripts so trained models are saved for later reuse. The current next priority is robustness analysis using the saved models, followed by selecting final figures/tables for the report and preparing video materials.
+Up to this point, I mainly completed the experiment-running and visualisation support work on my side. This includes dataset verification, metadata generation, sanity-check visualisation, running all three segmentation methods, summarising the clean test results, adding several analysis/visualisation scripts, saving the RF and U-Net models for reuse, and implementing the first full robustness visualisation workflow based on representative best/median/worst cases.
 
+At this stage, the main remaining work for me is no longer the basic coding. The more important next step is turning the current outputs into final report-ready figures/tables, writing the Results section and the robustness-related discussion, and then using those finished materials to prepare slides and speaking notes for the final video.
