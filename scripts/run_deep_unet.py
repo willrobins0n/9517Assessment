@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -74,6 +75,29 @@ def main() -> None:
     # selection unless the user opts out.
     val_csv = None if args.no_val else METADATA_DIR / 'val.csv'
     train_time = seg.fit(METADATA_DIR / 'train.csv', val_csv=val_csv)
+    
+    model_dir = RESULTS_DIR / 'dl_unet_r18'
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    checkpoint_path = model_dir / 'unet_segmenter.pth'
+    torch.save(
+        {
+            'model_state_dict': seg.model.state_dict(),
+            'encoder_name': seg.encoder_name,
+            'encoder_weights': seg.encoder_weights,
+            'num_epochs': seg.num_epochs,
+            'batch_size': seg.batch_size,
+            'learning_rate': seg.learning_rate,
+            'image_size': seg.image_size,
+            'bce_weight': seg.bce_weight,
+            'dice_weight': seg.dice_weight,
+            'num_workers': seg.num_workers,
+            'random_state': seg.random_state,
+        },
+        checkpoint_path
+    )
+
+    print(f'Saved U-Net checkpoint to: {checkpoint_path}')
 
     split_csv = METADATA_DIR / f'{args.split}.csv'
     summary = evaluate(

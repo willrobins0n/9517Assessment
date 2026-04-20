@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import pickle
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +52,15 @@ def main() -> None:
 
     # Training ALWAYS runs on train.csv — no peeking at val/test.
     train_time = seg.fit(METADATA_DIR / 'train.csv')
+    
+    model_dir = RESULTS_DIR / 'ml_random_forest'
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    model_path = model_dir / 'rf_segmenter.pkl'
+    with model_path.open('wb') as f:
+        pickle.dump(seg, f)
+
+    print(f'Saved RF model to: {model_path}')
 
     split_csv = METADATA_DIR / f'{args.split}.csv'
     summary = evaluate(
